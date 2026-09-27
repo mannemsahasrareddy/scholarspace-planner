@@ -1,0 +1,1758 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ScholarSpace — Ultra Colorful & Animated Student Study Planner</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        neon: {
+                            cyan: '#06b6d4',
+                            purple: '#a855f7',
+                            pink: '#ec4899',
+                            yellow: '#facc15',
+                            emerald: '#10b981',
+                            orange: '#f97316'
+                        }
+                    },
+                    animation: {
+                        'float': 'float 4s ease-in-out infinite',
+                        'float-slow': 'float 7s ease-in-out infinite',
+                        'float-reverse': 'float-reverse 5s ease-in-out infinite',
+                        'pulse-glow': 'pulseGlow 3s ease-in-out infinite',
+                        'spin-slow': 'spin 15s linear infinite',
+                        'bounce-slow': 'bounce 3s infinite',
+                        'gradient': 'gradientShift 8s ease infinite',
+                    },
+                    keyframes: {
+                        float: {
+                            '0%, 100%': { transform: 'translateY(0px) rotate(0deg)' },
+                            '50%': { transform: 'translateY(-15px) rotate(3deg)' },
+                        },
+                        'float-reverse': {
+                            '0%, 100%': { transform: 'translateY(0px) rotate(0deg)' },
+                            '50%': { transform: 'translateY(15px) rotate(-3deg)' },
+                        },
+                        pulseGlow: {
+                            '0%, 100%': { opacity: 0.6, transform: 'scale(1)' },
+                            '50%': { opacity: 1, transform: 'scale(1.05)' },
+                        },
+                        gradientShift: {
+                            '0%': { backgroundPosition: '0% 50%' },
+                            '50%': { backgroundPosition: '100% 50%' },
+                            '100%': { backgroundPosition: '0% 50%' },
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(168, 85, 247, 0.4);
+            border-radius: 9999px;
+        }
+        .glass-card {
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.4);
+        }
+        .dark .glass-card {
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(168, 85, 247, 0.2);
+        }
+        .animated-bg {
+            background-size: 300% 300%;
+            animation: gradientShift 10s ease infinite;
+        }
+        .neon-glow {
+            box-shadow: 0 0 25px rgba(168, 85, 247, 0.4);
+        }
+        .neon-glow-pink {
+            box-shadow: 0 0 25px rgba(236, 72, 153, 0.4);
+        }
+    </style>
+</head>
+<body class="h-full animated-bg bg-gradient-to-br from-indigo-950 via-purple-900 to-pink-950 text-slate-100 transition-colors duration-300">
+
+    <!-- Toast Notification Container -->
+    <div id="toast-container" aria-live="polite" class="fixed top-5 right-5 z-50 flex flex-col space-y-2 pointer-events-none"></div>
+
+    <!-- Main Application Wrapper -->
+    <div id="app" class="min-h-full flex flex-col">
+        <!-- Rendered dynamically by JavaScript -->
+    </div>
+
+    <script>
+        const STORAGE_KEYS = {
+            currentUser: 'scholarSpace_currentUser_v2',
+            users: 'scholarSpace_users_v2',
+            student: 'scholarSpace_student_v2',
+            subjects: 'scholarSpace_subjects_v2',
+            tasks: 'scholarSpace_tasks_v2',
+            settings: 'scholarSpace_settings_v2',
+            curriculums: 'scholarSpace_curriculums_v2'
+        };
+
+        let appState = {
+            isAuthenticated: false,
+            currentUser: null,
+            authMode: 'login', // 'login' or 'signup'
+            student: { name: '', email: '', course: '', academicYear: '' },
+            subjects: [],
+            tasks: [],
+            curriculums: {}, // subjectName -> { topics: [], notes: '', assignments: [], tests: [] }
+            settings: { darkMode: true, geminiApiKey: '' },
+            currentView: 'dashboard',
+            currentDate: new Date(),
+            activeFilter: { search: '', status: 'all', priority: 'all', subject: 'all' },
+            activeSort: 'dueDate'
+        };
+
+        function loadState() {
+            try {
+                const currentUser = JSON.parse(localStorage.getItem(STORAGE_KEYS.currentUser) || 'null');
+                if (currentUser) {
+                    appState.isAuthenticated = true;
+                    appState.currentUser = currentUser;
+                    appState.student = JSON.parse(localStorage.getItem(STORAGE_KEYS.student + '_' + currentUser.email) || JSON.stringify(currentUser));
+                    appState.subjects = JSON.parse(localStorage.getItem(STORAGE_KEYS.subjects + '_' + currentUser.email) || '[]');
+                    appState.curriculums = JSON.parse(localStorage.getItem(STORAGE_KEYS.curriculums + '_' + currentUser.email) || '{}');
+                    
+                    const rawTasks = JSON.parse(localStorage.getItem(STORAGE_KEYS.tasks + '_' + currentUser.email) || '[]');
+                    appState.tasks = Array.isArray(rawTasks) ? rawTasks.map(t => ({
+                        id: t.id || 'task_' + Math.random().toString(36).substr(2, 9),
+                        title: t.title || 'Untitled Task',
+                        description: t.description || '',
+                        subject: t.subject || (appState.subjects[0] ? appState.subjects[0].name : 'General'),
+                        dueDate: t.dueDate || new Date().toISOString().split('T')[0],
+                        dueTime: t.dueTime || '',
+                        priority: t.priority || 'Medium',
+                        estimatedDuration: t.estimatedDuration !== undefined ? t.estimatedDuration : '',
+                        status: t.status || 'Not Started',
+                        subtasks: Array.isArray(t.subtasks) ? t.subtasks : [],
+                        createdAt: t.createdAt || new Date().toISOString(),
+                        completedDate: t.completedDate || null
+                    })) : [];
+                    appState.settings = JSON.parse(localStorage.getItem(STORAGE_KEYS.settings + '_' + currentUser.email) || '{"darkMode":true,"geminiApiKey":""}');
+                } else {
+                    appState.isAuthenticated = false;
+                }
+
+                if (appState.settings.darkMode) {
+                    document.documentElement.classList.add('dark');
+                } else {
+                    document.documentElement.classList.remove('dark');
+                }
+            } catch (e) {
+                console.error("Error loading state:", e);
+            }
+        }
+
+        function saveState() {
+            try {
+                if (appState.currentUser && appState.currentUser.email) {
+                    const email = appState.currentUser.email;
+                    localStorage.setItem(STORAGE_KEYS.currentUser, JSON.stringify(appState.currentUser));
+                    localStorage.setItem(STORAGE_KEYS.student + '_' + email, JSON.stringify(appState.student));
+                    localStorage.setItem(STORAGE_KEYS.subjects + '_' + email, JSON.stringify(appState.subjects));
+                    localStorage.setItem(STORAGE_KEYS.tasks + '_' + email, JSON.stringify(appState.tasks));
+                    localStorage.setItem(STORAGE_KEYS.curriculums + '_' + email, JSON.stringify(appState.curriculums));
+                    localStorage.setItem(STORAGE_KEYS.settings + '_' + email, JSON.stringify(appState.settings));
+                }
+            } catch (e) {
+                console.error("Error saving state:", e);
+            }
+        }
+
+        function showToast(message, type = 'success') {
+            const container = document.getElementById('toast-container');
+            if (!container) return;
+            const toast = document.createElement('div');
+            const bgClass = type === 'error' ? 'bg-gradient-to-r from-red-600 to-rose-600 text-white shadow-red-500/40' : type === 'info' ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white shadow-cyan-500/40' : 'bg-gradient-to-r from-purple-600 via-pink-600 to-amber-500 text-white shadow-purple-500/50';
+            const icon = type === 'error' ? 'fa-circle-exclamation' : type === 'info' ? 'fa-circle-info' : 'fa-sparkles';
+            
+            toast.className = `pointer-events-auto flex items-center space-x-3 px-6 py-3.5 rounded-2xl shadow-2xl transform transition-all duration-300 translate-y-2 opacity-0 ${bgClass} font-bold text-sm`;
+            toast.innerHTML = `<i class="fa-solid ${icon} text-lg animate-bounce"></i><span>${escapeHtml(message)}</span>`;
+            container.appendChild(toast);
+
+            setTimeout(() => { toast.classList.remove('translate-y-2', 'opacity-0'); }, 10);
+            setTimeout(() => {
+                toast.classList.add('translate-y-2', 'opacity-0');
+                setTimeout(() => toast.remove(), 300);
+            }, 3500);
+        }
+
+        function escapeHtml(str) {
+            if (!str) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+
+        function updateTaskStatuses() {
+            const now = new Date();
+            const todayStr = now.toISOString().split('T')[0];
+            const currentTimeStr = now.toTimeString().slice(0,5);
+
+            appState.tasks.forEach(task => {
+                if (task.status === 'Completed') return;
+                if (task.dueDate < todayStr) {
+                    task.status = 'Overdue';
+                } else if (task.dueDate === todayStr && task.dueTime && task.dueTime < currentTimeStr) {
+                    task.status = 'Overdue';
+                } else if (task.status === 'Overdue' && task.dueDate >= todayStr) {
+                    task.status = 'Not Started';
+                }
+            });
+        }
+
+        function calculateStats() {
+            updateTaskStatuses();
+            const total = appState.tasks.length;
+            const completed = appState.tasks.filter(t => t.status === 'Completed').length;
+            const pending = appState.tasks.filter(t => t.status === 'Not Started' || t.status === 'In Progress').length;
+            const overdue = appState.tasks.filter(t => t.status === 'Overdue').length;
+            
+            const todayStr = new Date().toISOString().split('T')[0];
+            const todaysTasks = appState.tasks.filter(t => t.dueDate === todayStr);
+            const completionPercentage = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+            let streak = 0;
+            if (appState.tasks.length > 0) {
+                const completedDates = [...new Set(appState.tasks
+                    .filter(t => t.completedDate)
+                    .map(t => t.completedDate.split('T')[0]))].sort().reverse();
+
+                if (completedDates.length > 0) {
+                    let checkDate = new Date();
+                    let checkDateStr = checkDate.toISOString().split('T')[0];
+                    let todayCompleted = completedDates.includes(checkDateStr);
+                    if (!todayCompleted) {
+                        checkDate.setDate(checkDate.getDate() - 1);
+                        checkDateStr = checkDate.toISOString().split('T')[0];
+                    }
+
+                    for (let i = 0; i < 365; i++) {
+                        const dStr = checkDate.toISOString().split('T')[0];
+                        if (completedDates.includes(dStr)) {
+                            streak++;
+                            checkDate.setDate(checkDate.getDate() - 1);
+                        } else {
+                            break;
+                        }
+                    }
+                }
+            }
+
+            return { total, completed, pending, overdue, todaysTasks: todaysTasks.length, completionPercentage, streak };
+        }
+
+        function render() {
+            const app = document.getElementById('app');
+            if (!app) return;
+
+            if (!appState.isAuthenticated) {
+                app.innerHTML = renderAuthScreen();
+                return;
+            }
+
+            app.innerHTML = `
+                <div class="min-h-screen flex flex-col md:flex-row bg-slate-950/40 relative overflow-hidden">
+                    <!-- Colorful Background Animated Orbs -->
+                    <div class="absolute top-10 left-10 w-96 h-96 bg-purple-600/20 rounded-full filter blur-3xl animate-pulse-glow pointer-events-none"></div>
+                    <div class="absolute bottom-10 right-10 w-96 h-96 bg-pink-600/20 rounded-full filter blur-3xl animate-pulse-glow pointer-events-none" style="animation-delay: 1.5s;"></div>
+                    <div class="absolute top-1/2 left-1/3 w-96 h-96 bg-cyan-600/15 rounded-full filter blur-3xl animate-pulse-glow pointer-events-none" style="animation-delay: 3s;"></div>
+
+                    ${renderNavigation()}
+                    <main class="flex-1 flex flex-col min-w-0 overflow-y-auto relative z-10">
+                        <header class="glass-card border-b border-purple-500/20 h-20 flex items-center justify-between px-6 sm:px-10 shrink-0 sticky top-0 z-30 shadow-xl transition-all">
+                            <div class="flex items-center space-x-4">
+                                <button id="mobile-menu-btn" class="md:hidden text-purple-400 hover:text-white p-2.5 rounded-2xl bg-purple-900/50 border border-purple-500/30">
+                                    <i class="fa-solid fa-bars text-xl"></i>
+                                </button>
+                                <div>
+                                    <h1 class="text-xl sm:text-2xl font-black bg-gradient-to-r from-purple-400 via-pink-400 to-cyan-400 bg-clip-text text-transparent capitalize">${formatViewTitle(appState.currentView)}</h1>
+                                    <span class="text-xs font-bold text-slate-400 flex items-center"><span class="h-2 w-2 rounded-full bg-emerald-400 animate-ping mr-2"></span> Welcome back, ${escapeHtml(appState.student.name || appState.currentUser.name)}</span>
+                                </div>
+                            </div>
+                            <div class="flex items-center space-x-3">
+                                <button onclick="openAiCoachModal()" class="inline-flex items-center space-x-2 bg-gradient-to-r from-purple-600 via-pink-600 to-cyan-600 hover:opacity-95 text-white px-4.5 py-2.5 rounded-2xl text-sm font-black shadow-lg neon-glow transition transform hover:scale-105">
+                                    <i class="fa-solid fa-wand-magic-sparkles text-amber-300 animate-spin"></i>
+                                    <span class="hidden sm:inline">AI Study Coach</span>
+                                </button>
+                                <button onclick="openTaskModal()" class="inline-flex items-center space-x-2 bg-gradient-to-r from-emerald-500 to-teal-600 hover:opacity-95 text-white px-4.5 py-2.5 rounded-2xl text-sm font-black shadow-lg transition transform hover:scale-105">
+                                    <i class="fa-solid fa-plus"></i>
+                                    <span class="hidden sm:inline">New Task</span>
+                                </button>
+                            </div>
+                        </header>
+
+                        <div class="flex-1 p-4 sm:p-10 max-w-7xl w-full mx-auto">
+                            ${renderCurrentView()}
+                        </div>
+                    </main>
+                </div>
+                <div id="modal-container"></div>
+            `;
+
+            attachMainListeners();
+        }
+
+        function renderAuthScreen() {
+            const isLogin = appState.authMode === 'login';
+            return `
+                <div class="min-h-screen flex items-center justify-center p-4 sm:p-6 relative overflow-hidden animated-bg bg-gradient-to-br from-indigo-950 via-purple-950 to-pink-950">
+                    <!-- Super Animated Colorful Orbs & Student Avatars -->
+                    <div class="absolute -top-32 -left-32 w-96 h-96 bg-purple-500/30 rounded-full filter blur-3xl animate-pulse-glow pointer-events-none"></div>
+                    <div class="absolute -bottom-32 -right-32 w-96 h-96 bg-pink-500/30 rounded-full filter blur-3xl animate-pulse-glow pointer-events-none" style="animation-delay: 2s;"></div>
+                    <div class="absolute top-1/4 right-1/4 w-80 h-80 bg-cyan-500/20 rounded-full filter blur-3xl animate-pulse-glow pointer-events-none" style="animation-delay: 4s;"></div>
+
+                    <!-- Floating Animated Student Illustration Badges -->
+                    <div class="absolute top-10 left-10 hidden lg:flex items-center space-x-3.5 bg-white/10 backdrop-blur-xl px-5 py-3.5 rounded-3xl border border-white/20 shadow-2xl animate-float">
+                        <div class="h-12 w-12 rounded-2xl bg-gradient-to-tr from-amber-400 to-orange-500 flex items-center justify-center text-white text-xl shadow-lg neon-glow-pink">
+                            <i class="fa-solid fa-graduation-cap animate-bounce"></i>
+                        </div>
+                        <div>
+                            <span class="text-xs font-extrabold text-white block">AI Study Assistant</span>
+                            <span class="text-[10px] text-purple-200">Generate Notes & 20-Q Tests</span>
+                        </div>
+                    </div>
+
+                    <div class="absolute bottom-10 right-10 hidden lg:flex items-center space-x-3.5 bg-white/10 backdrop-blur-xl px-5 py-3.5 rounded-3xl border border-white/20 shadow-2xl animate-float-reverse">
+                        <div class="h-12 w-12 rounded-2xl bg-gradient-to-tr from-emerald-400 to-cyan-500 flex items-center justify-center text-white text-xl shadow-lg neon-glow">
+                            <i class="fa-solid fa-bolt animate-pulse"></i>
+                        </div>
+                        <div>
+                            <span class="text-xs font-extrabold text-white block">Color-Coded Streaks</span>
+                            <span class="text-[10px] text-cyan-200">Track Progress & Deadlines</span>
+                        </div>
+                    </div>
+
+                    <div class="max-w-md w-full glass-card rounded-3xl shadow-2xl border border-purple-500/30 p-8 sm:p-10 relative z-10 backdrop-blur-2xl transform transition-all">
+                        <div class="text-center mb-8">
+                            <div class="h-20 w-20 bg-gradient-to-tr from-purple-500 via-pink-500 to-cyan-400 rounded-3xl flex items-center justify-center text-white shadow-2xl neon-glow mx-auto mb-4 animate-float text-3xl">
+                                <i class="fa-solid fa-graduation-cap animate-pulse"></i>
+                            </div>
+                            <h2 class="text-2xl sm:text-3xl font-black bg-gradient-to-r from-purple-300 via-pink-300 to-cyan-300 bg-clip-text text-transparent tracking-tight">ScholarSpace AI</h2>
+                            <p class="text-sm text-slate-300 mt-1">${isLogin ? 'Welcome back! Log in to your colorful study hub.' : 'Create your personalized student study account.'}</p>
+                        </div>
+
+                        <form onsubmit="handleAuthSubmit(event)" class="space-y-4">
+                            ${!isLogin ? `
+                                <div>
+                                    <label class="block text-xs font-black uppercase tracking-wider text-purple-300 mb-1">Full Name</label>
+                                    <input type="text" id="auth-name" required placeholder="Alex Johnson" class="w-full px-4 py-3 rounded-2xl border border-purple-500/30 bg-slate-900/60 text-white text-sm focus:outline-none focus:ring-2 focus:ring-pink-500 transition shadow-inner">
+                                </div>
+                            ` : ''}
+                            <div>
+                                <label class="block text-xs font-black uppercase tracking-wider text-purple-300 mb-1">Email Address</label>
+                                <input type="email" id="auth-email" required placeholder="student@university.edu" class="w-full px-4 py-3 rounded-2xl border border-purple-500/30 bg-slate-900/60 text-white text-sm focus:outline-none focus:ring-2 focus:ring-pink-500 transition shadow-inner">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-black uppercase tracking-wider text-purple-300 mb-1">Password</label>
+                                <input type="password" id="auth-password" required placeholder="••••••••" class="w-full px-4 py-3 rounded-2xl border border-purple-500/30 bg-slate-900/60 text-white text-sm focus:outline-none focus:ring-2 focus:ring-pink-500 transition shadow-inner">
+                            </div>
+
+                            <button type="submit" class="w-full bg-gradient-to-r from-purple-600 via-pink-600 to-cyan-500 hover:opacity-95 text-white font-black py-3.5 px-4 rounded-2xl text-sm transition shadow-xl neon-glow transform hover:-translate-y-0.5 mt-2">
+                                ${isLogin ? 'Log In to Hub' : 'Create Account & Start'} <i class="fa-solid fa-arrow-right ml-2"></i>
+                            </button>
+                        </form>
+
+                        <div class="mt-6 text-center text-sm">
+                            <span class="text-slate-400">${isLogin ? "Don't have an account?" : "Already have an account?"}</span>
+                            <button type="button" onclick="toggleAuthMode()" class="font-black text-pink-400 ml-1 hover:underline">
+                                ${isLogin ? 'Sign Up' : 'Log In'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function toggleAuthMode() {
+            appState.authMode = appState.authMode === 'login' ? 'signup' : 'login';
+            render();
+        }
+
+        function handleAuthSubmit(event) {
+            event.preventDefault();
+            const emailInput = document.getElementById('auth-email').value.trim().toLowerCase();
+            const passwordInput = document.getElementById('auth-password').value;
+            const nameInput = document.getElementById('auth-name') ? document.getElementById('auth-name').value.trim() : '';
+
+            if (!emailInput || !passwordInput) {
+                showToast("Please fill in all required fields", "error");
+                return;
+            }
+
+            let users = JSON.parse(localStorage.getItem(STORAGE_KEYS.users) || '{}');
+
+            if (appState.authMode === 'signup') {
+                if (users[emailInput]) {
+                    showToast("An account with this email already exists. Please log in.", "error");
+                    return;
+                }
+                if (!nameInput) {
+                    showToast("Please enter your name", "error");
+                    return;
+                }
+                const newUser = { email: emailInput, password: passwordInput, name: nameInput };
+                users[emailInput] = newUser;
+                localStorage.setItem(STORAGE_KEYS.users, JSON.stringify(users));
+
+                appState.currentUser = newUser;
+                appState.student = { name: nameInput, email: emailInput, course: '', academicYear: '' };
+                appState.subjects = [];
+                appState.tasks = [];
+                appState.curriculums = {};
+                saveState();
+                showToast("Account created successfully! Welcome to ScholarSpace.");
+            } else {
+                const user = users[emailInput];
+                if (!user || user.password !== passwordInput) {
+                    showToast("Invalid email or password", "error");
+                    return;
+                }
+                appState.currentUser = user;
+                saveState();
+                showToast("Logged in successfully!");
+            }
+
+            appState.isAuthenticated = true;
+            render();
+        }
+
+        function logoutUser() {
+            localStorage.removeItem(STORAGE_KEYS.currentUser);
+            appState.isAuthenticated = false;
+            appState.currentUser = null;
+            showToast("Logged out successfully", "info");
+            render();
+        }
+
+        function formatViewTitle(view) {
+            switch(view) {
+                case 'dashboard': return 'Dashboard Hub';
+                case 'today': return "Today's Plan";
+                case 'tasks': return 'My Tasks';
+                case 'subjects': return 'Subjects & AI Study Guides';
+                case 'calendar': return 'Calendar View';
+                case 'progress': return 'Progress & Stats';
+                case 'settings': return 'Settings';
+                default: return 'Planner';
+            }
+        }
+
+        function renderNavigation() {
+            const views = [
+                { id: 'dashboard', label: 'Dashboard', icon: 'fa-house' },
+                { id: 'today', label: "Today's Plan", icon: 'fa-calendar-day' },
+                { id: 'tasks', label: 'My Tasks', icon: 'fa-list-check' },
+                { id: 'subjects', label: 'Subjects & AI', icon: 'fa-book-bookmark' },
+                { id: 'calendar', label: 'Calendar', icon: 'fa-calendar-days' },
+                { id: 'progress', label: 'Progress', icon: 'fa-chart-pie' },
+                { id: 'settings', label: 'Settings', icon: 'fa-gear' }
+            ];
+
+            return `
+                <aside id="sidebar" class="hidden md:flex flex-col w-72 glass-card border-r border-purple-500/20 shrink-0 shadow-2xl relative z-20">
+                    <div class="p-6 border-b border-purple-500/20 flex items-center space-x-3.5">
+                        <div class="h-12 w-12 rounded-2xl bg-gradient-to-tr from-purple-500 via-pink-500 to-cyan-400 flex items-center justify-center text-white shadow-lg neon-glow animate-float">
+                            <i class="fa-solid fa-graduation-cap text-xl"></i>
+                        </div>
+                        <div>
+                            <span class="font-black text-white block text-base tracking-tight bg-gradient-to-r from-purple-300 to-pink-300 bg-clip-text text-transparent">ScholarSpace</span>
+                            <span class="text-xs font-bold text-cyan-400">Colorful AI Hub</span>
+                        </div>
+                    </div>
+                    <nav class="flex-1 p-4 space-y-2 overflow-y-auto">
+                        ${views.map(v => `
+                            <button onclick="switchView('${v.id}')" class="w-full flex items-center space-x-3.5 px-4.5 py-3.5 rounded-2xl text-sm font-bold transition transform hover:scale-[1.02] ${appState.currentView === v.id ? 'bg-gradient-to-r from-purple-600 via-pink-600 to-cyan-500 text-white shadow-lg neon-glow' : 'text-slate-300 hover:bg-purple-900/40 hover:text-white'}">
+                                <i class="fa-solid ${v.icon} w-5 text-center text-base"></i>
+                                <span>${v.label}</span>
+                            </button>
+                        `).join('')}
+                    </nav>
+                    <div class="p-4 border-t border-purple-500/20">
+                        <div class="bg-purple-950/50 p-3.5 rounded-2xl border border-purple-500/30 flex items-center justify-between">
+                            <div class="min-w-0 pr-2">
+                                <span class="font-bold text-white block text-xs truncate">${escapeHtml(appState.student.name || appState.currentUser.name)}</span>
+                                <span class="text-[11px] text-cyan-400 truncate block">${escapeHtml(appState.currentUser.email)}</span>
+                            </div>
+                            <button onclick="logoutUser()" class="text-slate-400 hover:text-red-400 p-2 transition" title="Log out">
+                                <i class="fa-solid fa-right-from-bracket"></i>
+                            </button>
+                        </div>
+                    </div>
+                </aside>
+
+                <div id="mobile-drawer" class="fixed inset-0 z-40 bg-slate-950/80 backdrop-blur-md hidden md:hidden">
+                    <div class="absolute left-0 top-0 bottom-0 w-72 glass-card shadow-2xl flex flex-col border-r border-purple-500/30">
+                        <div class="p-6 border-b border-purple-500/20 flex items-center justify-between">
+                            <div class="flex items-center space-x-3">
+                                <div class="h-10 w-10 rounded-2xl bg-gradient-to-tr from-purple-500 to-pink-500 flex items-center justify-center text-white shadow-md">
+                                    <i class="fa-solid fa-graduation-cap"></i>
+                                </div>
+                                <span class="font-black text-white">ScholarSpace</span>
+                            </div>
+                            <button id="close-drawer" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+                        </div>
+                        <nav class="flex-1 p-4 space-y-2">
+                            ${views.map(v => `
+                                <button onclick="switchView('${v.id}'); toggleMobileDrawer(false);" class="w-full flex items-center space-x-3 px-4 py-3 rounded-2xl text-sm font-bold transition ${appState.currentView === v.id ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-md' : 'text-slate-300 hover:bg-purple-900/40'}">
+                                    <i class="fa-solid ${v.icon} w-5 text-center"></i>
+                                    <span>${v.label}</span>
+                                </button>
+                            `).join('')}
+                        </nav>
+                        <div class="p-4 border-t border-purple-500/20">
+                            <button onclick="logoutUser()" class="w-full bg-red-950/60 text-red-400 py-3 rounded-2xl font-bold text-xs flex items-center justify-center space-x-2 border border-red-500/30">
+                                <i class="fa-solid fa-right-from-bracket"></i><span>Log Out</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function switchView(view) {
+            appState.currentView = view;
+            render();
+        }
+
+        function toggleMobileDrawer(show) {
+            const drawer = document.getElementById('mobile-drawer');
+            if (!drawer) return;
+            if (show) drawer.classList.remove('hidden');
+            else drawer.classList.add('hidden');
+        }
+
+        function renderCurrentView() {
+            switch(appState.currentView) {
+                case 'dashboard': return renderDashboardView();
+                case 'today': return renderTodayView();
+                case 'tasks': return renderTasksView();
+                case 'subjects': return renderSubjectsView();
+                case 'calendar': return renderCalendarView();
+                case 'progress': return renderProgressView();
+                case 'settings': return renderSettingsView();
+                default: return renderDashboardView();
+            }
+        }
+
+        function renderDashboardView() {
+            const stats = calculateStats();
+            const studentName = appState.student.name || appState.currentUser.name;
+            const upcomingTasks = appState.tasks
+                .filter(t => t.status !== 'Completed')
+                .sort((a,b) => new Date(a.dueDate) - new Date(b.dueDate))
+                .slice(0, 5);
+
+            return `
+                <div class="space-y-6">
+                    <div class="bg-gradient-to-r from-purple-600 via-pink-600 to-cyan-500 rounded-3xl p-6 sm:p-10 text-white shadow-2xl neon-glow flex flex-col md:flex-row justify-between items-start md:items-center gap-6 relative overflow-hidden">
+                        <div class="absolute -right-10 -bottom-10 w-64 h-64 bg-white/20 rounded-full filter blur-3xl pointer-events-none animate-pulse-glow"></div>
+                        <div class="relative z-10">
+                            <h2 class="text-2xl sm:text-4xl font-black tracking-tight">Hello, ${escapeHtml(studentName)}! 🌟</h2>
+                            <p class="text-purple-100 text-sm mt-1 max-w-xl font-medium">Your personal study hub is fully animated and colorful. Keep track of your subjects, assignments, and AI guides without clutter.</p>
+                        </div>
+                        <div class="flex items-center space-x-3 bg-white/20 backdrop-blur-xl px-6 py-4 rounded-3xl border border-white/30 relative z-10 shadow-2xl">
+                            <div class="h-12 w-12 rounded-2xl bg-amber-400/40 flex items-center justify-center text-amber-200 text-2xl shadow-lg">
+                                <i class="fa-solid fa-fire animate-bounce"></i>
+                            </div>
+                            <div>
+                                <span class="text-[11px] uppercase tracking-wider text-purple-100 font-black block">Study Streak</span>
+                                <span class="text-xl font-black">${stats.streak} Day${stats.streak === 1 ? '' : 's'}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- AI Study Coach Banner -->
+                    <div class="bg-gradient-to-r from-slate-900 via-purple-950 to-slate-900 rounded-3xl p-6 sm:p-8 text-white shadow-2xl border border-purple-500/40 flex flex-col md:flex-row justify-between items-center gap-6 relative overflow-hidden">
+                        <div class="absolute -left-10 -top-10 w-48 h-48 bg-cyan-500/20 rounded-full filter blur-2xl"></div>
+                        <div class="flex items-start space-x-4 relative z-10">
+                            <div class="h-14 w-14 rounded-2xl bg-gradient-to-tr from-cyan-400 to-purple-600 flex items-center justify-center text-white text-2xl shadow-lg shrink-0 animate-pulse">
+                                <i class="fa-solid fa-wand-magic-sparkles"></i>
+                            </div>
+                            <div>
+                                <h3 class="font-black text-xl text-cyan-300">Gemini AI Study Coach & Custom Tests</h3>
+                                <p class="text-xs sm:text-sm text-slate-300 mt-1">Ask questions, generate 20-question tests, or request notes on any subject anytime!</p>
+                            </div>
+                        </div>
+                        <div class="flex items-center space-x-3 shrink-0 relative z-10">
+                            <button onclick="switchView('subjects')" class="bg-purple-600 hover:bg-purple-500 text-white px-5 py-3 rounded-2xl text-sm font-black shadow-lg transition transform hover:scale-105">
+                                Manage Subjects
+                            </button>
+                            <button onclick="openAiCoachModal()" class="bg-gradient-to-r from-pink-500 to-cyan-500 hover:opacity-90 text-white px-5 py-3 rounded-2xl text-sm font-black shadow-xl neon-glow transition transform hover:scale-105">
+                                AI Coach <i class="fa-solid fa-arrow-right ml-1"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div class="glass-card p-5 rounded-3xl border border-cyan-500/30 shadow-xl flex items-center space-x-4 transform hover:-translate-y-1.5 transition">
+                            <div class="h-12 w-12 rounded-2xl bg-cyan-500/20 text-cyan-400 flex items-center justify-center text-xl font-bold">
+                                <i class="fa-solid fa-list-check"></i>
+                            </div>
+                            <div>
+                                <span class="text-[11px] font-black text-slate-400 uppercase tracking-wider block">Total Tasks</span>
+                                <span class="text-2xl font-black text-white">${stats.total}</span>
+                            </div>
+                        </div>
+                        <div class="glass-card p-5 rounded-3xl border border-emerald-500/30 shadow-xl flex items-center space-x-4 transform hover:-translate-y-1.5 transition">
+                            <div class="h-12 w-12 rounded-2xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-xl font-bold">
+                                <i class="fa-solid fa-circle-check"></i>
+                            </div>
+                            <div>
+                                <span class="text-[11px] font-black text-slate-400 uppercase tracking-wider block">Completed</span>
+                                <span class="text-2xl font-black text-white">${stats.completed}</span>
+                            </div>
+                        </div>
+                        <div class="glass-card p-5 rounded-3xl border border-amber-500/30 shadow-xl flex items-center space-x-4 transform hover:-translate-y-1.5 transition">
+                            <div class="h-12 w-12 rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center text-xl font-bold">
+                                <i class="fa-solid fa-clock"></i>
+                            </div>
+                            <div>
+                                <span class="text-[11px] font-black text-slate-400 uppercase tracking-wider block">Pending</span>
+                                <span class="text-2xl font-black text-white">${stats.pending}</span>
+                            </div>
+                        </div>
+                        <div class="glass-card p-5 rounded-3xl border border-rose-500/30 shadow-xl flex items-center space-x-4 transform hover:-translate-y-1.5 transition">
+                            <div class="h-12 w-12 rounded-2xl bg-rose-500/20 text-rose-400 flex items-center justify-center text-xl font-bold">
+                                <i class="fa-solid fa-triangle-exclamation"></i>
+                            </div>
+                            <div>
+                                <span class="text-[11px] font-black text-slate-400 uppercase tracking-wider block">Overdue</span>
+                                <span class="text-2xl font-black text-white">${stats.overdue}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="glass-card p-6 rounded-3xl border border-purple-500/30 shadow-xl">
+                        <div class="flex justify-between items-center mb-3">
+                            <h3 class="font-black text-white text-sm flex items-center"><i class="fa-solid fa-chart-line text-pink-400 mr-2"></i> Overall Academic Completion</h3>
+                            <span class="text-sm font-black text-cyan-400">${stats.completionPercentage}%</span>
+                        </div>
+                        <div class="w-full bg-slate-800 h-4 rounded-full overflow-hidden p-0.5 border border-purple-500/20">
+                            <div class="bg-gradient-to-r from-purple-500 via-pink-500 to-cyan-400 h-full rounded-full transition-all duration-500 shadow-lg" style="width: ${stats.completionPercentage}%"></div>
+                        </div>
+                    </div>
+
+                    <div class="glass-card rounded-3xl border border-purple-500/30 shadow-xl overflow-hidden">
+                        <div class="p-6 border-b border-purple-500/20 flex justify-between items-center">
+                            <h3 class="font-black text-white text-base">Upcoming Deadlines</h3>
+                            <button onclick="switchView('tasks')" class="text-xs font-black text-cyan-400 hover:underline">View All Tasks</button>
+                        </div>
+                        <div class="divide-y divide-purple-500/10">
+                            ${upcomingTasks.length === 0 ? `
+                                <div class="p-16 text-center">
+                                    <div class="h-16 w-16 bg-gradient-to-tr from-purple-600 to-pink-600 text-white rounded-3xl flex items-center justify-center mx-auto mb-4 shadow-xl neon-glow animate-bounce">
+                                        <i class="fa-solid fa-clipboard-list text-2xl"></i>
+                                    </div>
+                                    <p class="text-sm font-black text-white">Your study dashboard is ready and waiting.</p>
+                                    <p class="text-xs text-slate-400 mt-1">Add your subjects or create your first task to get started.</p>
+                                    <div class="flex justify-center space-x-3 mt-4">
+                                        <button onclick="openSubjectModal()" class="bg-purple-600 text-white px-5 py-2.5 rounded-2xl text-xs font-black shadow-lg">Add Subject</button>
+                                        <button onclick="openTaskModal()" class="bg-gradient-to-r from-pink-600 to-cyan-500 text-white px-5 py-2.5 rounded-2xl text-xs font-black shadow-lg">Add Task</button>
+                                    </div>
+                                </div>
+                            ` : upcomingTasks.map(t => renderTaskRowCard(t)).join('')}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderTodayView() {
+            const todayStr = new Date().toISOString().split('T')[0];
+            const todaysTasks = appState.tasks.filter(t => t.dueDate === todayStr);
+
+            return `
+                <div class="space-y-6">
+                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 glass-card p-6 rounded-3xl border border-purple-500/30 shadow-xl">
+                        <div>
+                            <h2 class="text-2xl font-black text-white">Today's Study Plan</h2>
+                            <p class="text-sm text-cyan-400 mt-0.5">${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                        </div>
+                        <button onclick="openTaskModal()" class="bg-gradient-to-r from-pink-600 to-cyan-500 text-white px-5 py-3 rounded-2xl text-sm font-black transition shadow-lg neon-glow flex items-center space-x-2">
+                            <i class="fa-solid fa-plus"></i>
+                            <span>Add Today's Task</span>
+                        </button>
+                    </div>
+
+                    <div class="glass-card rounded-3xl border border-purple-500/30 shadow-xl overflow-hidden">
+                        <div class="p-6 border-b border-purple-500/20">
+                            <h3 class="font-black text-white text-sm">Tasks Scheduled For Today (${todaysTasks.length})</h3>
+                        </div>
+                        <div class="divide-y divide-purple-500/10">
+                            ${todaysTasks.length === 0 ? `
+                                <div class="p-16 text-center">
+                                    <div class="h-16 w-16 bg-gradient-to-tr from-cyan-500 to-purple-600 text-white rounded-3xl flex items-center justify-center mx-auto mb-4 shadow-xl neon-glow animate-pulse">
+                                        <i class="fa-solid fa-calendar-day text-2xl"></i>
+                                    </div>
+                                    <p class="text-sm font-black text-white">No tasks planned for today.</p>
+                                    <button onclick="openTaskModal()" class="mt-4 bg-gradient-to-r from-purple-600 to-pink-600 text-white px-5 py-2.5 rounded-2xl text-xs font-black shadow-lg">Add Task Now</button>
+                                </div>
+                            ` : todaysTasks.map(t => renderTaskRowCard(t)).join('')}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderTasksView() {
+            let filtered = appState.tasks.filter(t => {
+                const s = appState.activeFilter.search.toLowerCase();
+                const matchSearch = t.title.toLowerCase().includes(s) || t.description.toLowerCase().includes(s) || t.subject.toLowerCase().includes(s);
+                const matchStatus = appState.activeFilter.status === 'all' || t.status === appState.activeFilter.status;
+                const matchPriority = appState.activeFilter.priority === 'all' || t.priority === appState.activeFilter.priority;
+                const matchSubject = appState.activeFilter.subject === 'all' || t.subject === appState.activeFilter.subject;
+                return matchSearch && matchStatus && matchPriority && matchSubject;
+            });
+
+            filtered.sort((a, b) => {
+                if (appState.activeSort === 'dueDate') return new Date(a.dueDate) - new Date(b.dueDate);
+                if (appState.activeSort === 'priority') {
+                    const rank = { 'High': 3, 'Medium': 2, 'Low': 1 };
+                    return (rank[b.priority] || 0) - (rank[a.priority] || 0);
+                }
+                if (appState.activeSort === 'duration') return (b.estimatedDuration || 0) - (a.estimatedDuration || 0);
+                if (appState.activeSort === 'created') return new Date(b.createdAt) - new Date(a.createdAt);
+                return 0;
+            });
+
+            return `
+                <div class="space-y-6">
+                    <div class="glass-card p-6 rounded-3xl border border-purple-500/30 shadow-xl space-y-4">
+                        <div class="flex flex-col md:flex-row gap-4 justify-between items-center">
+                            <div class="w-full md:w-80 relative">
+                                <i class="fa-solid fa-search absolute left-4 top-3.5 text-cyan-400 text-sm"></i>
+                                <input type="text" id="task-search-input" value="${escapeHtml(appState.activeFilter.search)}" oninput="updateSearchFilter(this.value)" placeholder="Search tasks..." class="w-full pl-11 pr-4 py-3 rounded-2xl border border-purple-500/30 bg-slate-900/60 text-white text-sm focus:outline-none focus:ring-2 focus:ring-pink-500 shadow-inner">
+                            </div>
+                            <div class="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
+                                <select onchange="updateStatusFilter(this.value)" class="px-3.5 py-2.5 rounded-2xl border border-purple-500/30 bg-slate-900 text-white text-xs font-bold">
+                                    <option value="all" ${appState.activeFilter.status === 'all' ? 'selected' : ''}>All Statuses</option>
+                                    <option value="Not Started" ${appState.activeFilter.status === 'Not Started' ? 'selected' : ''}>Not Started</option>
+                                    <option value="In Progress" ${appState.activeFilter.status === 'In Progress' ? 'selected' : ''}>In Progress</option>
+                                    <option value="Completed" ${appState.activeFilter.status === 'Completed' ? 'selected' : ''}>Completed</option>
+                                    <option value="Overdue" ${appState.activeFilter.status === 'Overdue' ? 'selected' : ''}>Overdue</option>
+                                </select>
+                                <select onchange="updatePriorityFilter(this.value)" class="px-3.5 py-2.5 rounded-2xl border border-purple-500/30 bg-slate-900 text-white text-xs font-bold">
+                                    <option value="all" ${appState.activeFilter.priority === 'all' ? 'selected' : ''}>All Priorities</option>
+                                    <option value="High" ${appState.activeFilter.priority === 'High' ? 'selected' : ''}>High</option>
+                                    <option value="Medium" ${appState.activeFilter.priority === 'Medium' ? 'selected' : ''}>Medium</option>
+                                    <option value="Low" ${appState.activeFilter.priority === 'Low' ? 'selected' : ''}>Low</option>
+                                </select>
+                                <select onchange="updateSubjectFilter(this.value)" class="px-3.5 py-2.5 rounded-2xl border border-purple-500/30 bg-slate-900 text-white text-xs font-bold">
+                                    <option value="all">All Subjects</option>
+                                    ${appState.subjects.map(s => `<option value="${escapeHtml(s.name)}" ${appState.activeFilter.subject === s.name ? 'selected' : ''}>${escapeHtml(s.name)}</option>`).join('')}
+                                </select>
+                                <select onchange="updateSortOrder(this.value)" class="px-3.5 py-2.5 rounded-2xl border border-purple-500/30 bg-slate-900 text-white text-xs font-bold">
+                                    <option value="dueDate" ${appState.activeSort === 'dueDate' ? 'selected' : ''}>Sort: Due Date</option>
+                                    <option value="priority" ${appState.activeSort === 'priority' ? 'selected' : ''}>Sort: Priority</option>
+                                    <option value="duration" ${appState.activeSort === 'duration' ? 'selected' : ''}>Sort: Duration</option>
+                                    <option value="created" ${appState.activeSort === 'created' ? 'selected' : ''}>Sort: Created</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="glass-card rounded-3xl border border-purple-500/30 shadow-xl overflow-hidden">
+                        <div class="p-6 border-b border-purple-500/20 flex justify-between items-center">
+                            <h3 class="font-black text-white text-base">Tasks (${filtered.length})</h3>
+                            <button onclick="openTaskModal()" class="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-4 py-2 rounded-xl text-xs font-black shadow-lg">Add Task</button>
+                        </div>
+                        <div class="divide-y divide-purple-500/10">
+                            ${filtered.length === 0 ? `
+                                <div class="p-16 text-center">
+                                    <div class="h-16 w-16 bg-gradient-to-tr from-purple-600 to-cyan-500 text-white rounded-3xl flex items-center justify-center mx-auto mb-4 shadow-xl neon-glow animate-pulse">
+                                        <i class="fa-solid fa-list-check text-2xl"></i>
+                                    </div>
+                                    <p class="text-sm font-black text-white">No tasks found matching your filters.</p>
+                                    <button onclick="openTaskModal()" class="mt-4 bg-gradient-to-r from-purple-600 to-pink-600 text-white px-5 py-2.5 rounded-2xl text-xs font-black shadow-lg">Create Task</button>
+                                </div>
+                            ` : filtered.map(t => renderTaskRowCard(t)).join('')}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderTaskRowCard(task) {
+            const priorityColors = {
+                'High': 'bg-rose-950/60 text-rose-300 border-rose-500/40',
+                'Medium': 'bg-amber-950/60 text-amber-300 border-amber-500/40',
+                'Low': 'bg-cyan-950/60 text-cyan-300 border-cyan-500/40'
+            };
+
+            const statusColors = {
+                'Completed': 'bg-emerald-950/60 text-emerald-300 border-emerald-500/40',
+                'In Progress': 'bg-purple-950/60 text-purple-300 border-purple-500/40',
+                'Overdue': 'bg-red-950/60 text-red-300 border-red-500/40',
+                'Not Started': 'bg-slate-800 text-slate-300 border-slate-700'
+            };
+
+            const subcompleted = task.subtasks.filter(s => s.completed).length;
+            const subtotal = task.subtasks.length;
+            const subPercent = subtotal > 0 ? Math.round((subcompleted / subtotal) * 100) : 0;
+
+            return `
+                <div class="p-5 hover:bg-purple-900/20 transition flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                    <div class="flex items-start space-x-3.5 min-w-0 flex-1">
+                        <button onclick="toggleTaskCompletion('${task.id}')" class="mt-0.5 h-6 w-6 rounded-lg border-2 border-purple-400 flex items-center justify-center shrink-0 transition ${task.status === 'Completed' ? 'bg-gradient-to-tr from-emerald-500 to-teal-500 border-transparent text-white shadow-lg' : 'hover:border-pink-500'}">
+                            ${task.status === 'Completed' ? '<i class="fa-solid fa-check text-xs"></i>' : ''}
+                        </button>
+                        <div class="min-w-0 flex-1">
+                            <div class="flex items-center space-x-2.5 flex-wrap gap-y-1">
+                                <span class="font-black text-white text-sm truncate ${task.status === 'Completed' ? 'line-through text-slate-500' : ''}">${escapeHtml(task.title)}</span>
+                                <span class="text-[11px] px-2.5 py-0.5 rounded-lg border font-black ${priorityColors[task.priority]}">${task.priority}</span>
+                                <span class="text-[11px] px-2.5 py-0.5 rounded-lg border font-black ${statusColors[task.status]}">${task.status}</span>
+                            </div>
+                            ${task.description ? `<p class="text-xs text-slate-300 mt-1 line-clamp-1">${escapeHtml(task.description)}</p>` : ''}
+                            <div class="flex flex-wrap items-center gap-x-4 gap-y-1.5 mt-2.5 text-xs font-bold text-slate-400">
+                                <span class="text-cyan-400"><i class="fa-solid fa-book mr-1.5"></i>${escapeHtml(task.subject)}</span>
+                                <span><i class="fa-regular fa-calendar mr-1.5"></i>${escapeHtml(task.dueDate)}</span>
+                                <span><i class="fa-regular fa-clock mr-1.5"></i>${task.estimatedDuration ? task.estimatedDuration + ' mins' : 'Duration not specified'}</span>
+                                ${subtotal > 0 ? `<span><i class="fa-solid fa-list-check mr-1.5"></i>${subcompleted}/${subtotal} (${subPercent}%)</span>` : ''}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex items-center space-x-2 shrink-0 self-end sm:self-center">
+                        <button onclick="openAiBreakdownForTask('${task.id}')" class="p-2.5 rounded-xl bg-purple-950/60 text-purple-300 hover:bg-purple-900 transition shadow-md border border-purple-500/30" title="AI Subtask Breakdown"><i class="fa-solid fa-wand-magic-sparkles"></i></button>
+                        <button onclick="openTaskModal('${task.id}')" class="p-2.5 rounded-xl bg-slate-800 text-slate-300 hover:bg-slate-700 transition shadow-md border border-slate-700" title="Edit Task"><i class="fa-solid fa-pen-to-square"></i></button>
+                        <button onclick="deleteTask('${task.id}')" class="p-2.5 rounded-xl bg-rose-950/60 text-rose-300 hover:bg-rose-900 transition shadow-md border border-rose-500/30" title="Delete Task"><i class="fa-solid fa-trash"></i></button>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderSubjectsView() {
+            return `
+                <div class="space-y-6">
+                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 glass-card p-6 rounded-3xl border border-purple-500/30 shadow-xl">
+                        <div>
+                            <h2 class="text-2xl font-black text-white">Subjects & AI Study Guides</h2>
+                            <p class="text-sm text-cyan-400 mt-0.5">Manage your subjects and request AI notes, assignments, or custom tests anytime you need them.</p>
+                        </div>
+                        <button onclick="openSubjectModal()" class="bg-gradient-to-r from-purple-600 via-pink-600 to-cyan-500 text-white px-5 py-3 rounded-2xl text-sm font-black transition shadow-lg neon-glow flex items-center space-x-2 shrink-0">
+                            <i class="fa-solid fa-plus"></i>
+                            <span>Add Subject</span>
+                        </button>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        ${appState.subjects.length === 0 ? `
+                            <div class="col-span-full glass-card p-16 rounded-3xl border border-purple-500/30 text-center shadow-xl">
+                                <div class="h-16 w-16 bg-gradient-to-tr from-purple-600 to-pink-600 text-white rounded-3xl flex items-center justify-center mx-auto mb-4 shadow-xl neon-glow animate-bounce">
+                                    <i class="fa-solid fa-book-bookmark text-2xl"></i>
+                                </div>
+                                <p class="text-sm font-black text-white">No subjects added yet.</p>
+                                <button onclick="openSubjectModal()" class="mt-4 bg-gradient-to-r from-purple-600 to-pink-600 text-white px-5 py-2.5 rounded-2xl text-xs font-black shadow-lg">Add First Subject</button>
+                            </div>
+                        ` : appState.subjects.map(s => {
+                            const subTasks = appState.tasks.filter(t => t.subject === s.name);
+                            const total = subTasks.length;
+                            const completed = subTasks.filter(t => t.status === 'Completed').length;
+                            const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
+                            const curriculum = appState.curriculums[s.name];
+
+                            return `
+                                <div class="glass-card rounded-3xl border border-purple-500/30 shadow-xl p-6 flex flex-col justify-between transform hover:-translate-y-1.5 transition">
+                                    <div>
+                                        <div class="flex justify-between items-start mb-3">
+                                            <h3 class="font-black text-white text-lg">${escapeHtml(s.name)}</h3>
+                                            <div class="flex space-x-1.5">
+                                                <button onclick="openCurriculumModal('${escapeHtml(s.name)}')" class="p-2 text-pink-400 hover:text-white transition" title="View AI Study Guide, Notes & Tests"><i class="fa-solid fa-brain text-sm animate-pulse"></i></button>
+                                                <button onclick="openSubjectModal('${escapeHtml(s.name)}')" class="p-2 text-slate-400 hover:text-cyan-400 transition" title="Edit"><i class="fa-solid fa-pen text-xs"></i></button>
+                                                <button onclick="deleteSubjectPrompt('${escapeHtml(s.name)}')" class="p-2 text-slate-400 hover:text-rose-400 transition" title="Delete"><i class="fa-solid fa-trash text-xs"></i></button>
+                                            </div>
+                                        </div>
+                                        ${s.description ? `<p class="text-xs text-slate-300 mb-3">${escapeHtml(s.description)}</p>` : ''}
+                                        
+                                        ${curriculum && curriculum.notes ? `
+                                            <div class="mb-4 bg-purple-950/40 p-3.5 rounded-2xl border border-purple-500/30">
+                                                <span class="text-[11px] font-black uppercase tracking-wider text-cyan-300 block mb-1"><i class="fa-solid fa-wand-magic-sparkles mr-1"></i> AI Study Guide Ready</span>
+                                                <span class="text-[11px] text-slate-300 line-clamp-2">${escapeHtml(curriculum.notes)}</span>
+                                            </div>
+                                        ` : `
+                                            <div class="mb-4 bg-slate-900/60 p-3.5 rounded-2xl border border-slate-700 text-xs text-slate-300 flex flex-col space-y-2">
+                                                <span class="font-bold text-slate-400">No AI Study Guide requested yet.</span>
+                                                <button onclick="openAiRequestModal('${escapeHtml(s.name)}')" class="bg-gradient-to-r from-purple-600 to-pink-600 text-white py-2 px-3 rounded-xl font-black text-xs shadow-md transition">
+                                                    <i class="fa-solid fa-wand-magic-sparkles mr-1"></i> Request AI Notes & Test
+                                                </button>
+                                            </div>
+                                        `}
+
+                                        <div class="space-y-1.5 mb-4 text-xs font-bold text-slate-300">
+                                            <div class="flex justify-between"><span>Total Tasks:</span><span class="font-black text-white">${total}</span></div>
+                                            <div class="flex justify-between"><span>Completed:</span><span class="font-black text-emerald-400">${completed}</span></div>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <div class="flex justify-between text-xs font-black mb-1.5">
+                                            <span>Progress</span>
+                                            <span class="text-cyan-400">${total === 0 ? 'No tasks' : pct + '%'}</span>
+                                        </div>
+                                        <div class="w-full bg-slate-800 h-2.5 rounded-full overflow-hidden border border-purple-500/20">
+                                            <div class="bg-gradient-to-r from-purple-500 to-cyan-400 h-full rounded-full transition-all" style="width: ${pct}%"></div>
+                                        </div>
+                                        <button onclick="openCurriculumModal('${escapeHtml(s.name)}')" class="w-full mt-4 bg-gradient-to-r from-purple-600 via-pink-600 to-cyan-500 text-white py-2.5 rounded-2xl text-xs font-black shadow-lg neon-glow transition transform hover:scale-[1.02]">
+                                            <i class="fa-solid fa-book-open mr-1.5"></i> Open AI Study Guide
+                                        </button>
+                                    </div>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        function openAiRequestModal(subjectName) {
+            const modalContainer = document.getElementById('modal-container');
+            if (!modalContainer) return;
+
+            modalContainer.innerHTML = `
+                <div class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
+                    <div class="glass-card rounded-3xl shadow-2xl border border-purple-500/40 max-w-lg w-full p-6 sm:p-8">
+                        <div class="flex justify-between items-center mb-6">
+                            <div class="flex items-center space-x-3">
+                                <div class="h-10 w-10 rounded-xl bg-gradient-to-tr from-purple-600 to-cyan-400 text-white flex items-center justify-center shadow-lg">
+                                    <i class="fa-solid fa-wand-magic-sparkles"></i>
+                                </div>
+                                <h3 class="font-black text-white text-lg">AI Study Guide for ${escapeHtml(subjectName)}</h3>
+                            </div>
+                            <button onclick="closeModal()" class="text-slate-400 hover:text-white p-2"><i class="fa-solid fa-xmark text-xl"></i></button>
+                        </div>
+
+                        <div class="space-y-4 text-sm">
+                            <p class="text-slate-300">Choose what you would like Gemini AI to generate for this subject. (For example, you can request comprehensive study notes, practice assignments, or a 20-question test).</p>
+                            
+                            <div>
+                                <label class="block text-xs font-black uppercase tracking-wider text-purple-300 mb-1">Custom Prompt / Request</label>
+                                <textarea id="ai-custom-prompt" rows="3" class="w-full px-4 py-3 rounded-2xl border border-purple-500/30 bg-slate-900/60 text-white text-sm focus:outline-none focus:ring-2 focus:ring-pink-500">Generate detailed study notes, 3 practice assignments, and a 20-question comprehensive test with multiple choice questions.</textarea>
+                            </div>
+
+                            <div class="flex justify-end space-x-3 pt-4 border-t border-purple-500/20">
+                                <button type="button" onclick="closeModal()" class="px-5 py-3 rounded-2xl border border-purple-500/30 text-slate-300 font-bold">Cancel</button>
+                                <button type="button" onclick="submitAiStudyGuideRequest('${escapeHtml(subjectName)}')" class="bg-gradient-to-r from-purple-600 via-pink-600 to-cyan-500 text-white font-black py-3 px-6 rounded-2xl text-sm transition shadow-lg neon-glow">Generate AI Guide</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        async function submitAiStudyGuideRequest(subjectName) {
+            const promptInput = document.getElementById('ai-custom-prompt');
+            const customInstruction = promptInput ? promptInput.value.trim() : "Generate notes and tests.";
+
+            const modalContainer = document.getElementById('modal-container');
+            if (modalContainer) {
+                modalContainer.innerHTML = `
+                    <div class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
+                        <div class="glass-card rounded-3xl shadow-2xl border border-purple-500/40 max-w-md w-full p-8 text-center">
+                            <div class="h-16 w-16 bg-gradient-to-tr from-purple-600 via-pink-600 to-cyan-400 text-white rounded-3xl flex items-center justify-center mx-auto mb-4 text-2xl shadow-xl neon-glow animate-spin">
+                                <i class="fa-solid fa-wand-magic-sparkles"></i>
+                            </div>
+                            <h3 class="font-black text-white text-lg mb-2">Generating AI Study Guide</h3>
+                            <p class="text-sm text-slate-300">Gemini AI is crafting your notes, assignments, and test questions for <strong class="text-cyan-400">${escapeHtml(subjectName)}</strong>...</p>
+                        </div>
+                    </div>
+                `;
+            }
+
+            try {
+                const prompt = `Based on the following student request: "${customInstruction}", generate a complete study guide for the subject "${subjectName}".
+                Return a valid JSON object strictly in this format without markdown code blocks:
+                {
+                  "topics": ["Topic 1", "Topic 2", "Topic 3"],
+                  "notes": "Comprehensive study notes...",
+                  "assignments": ["Assignment 1", "Assignment 2"],
+                  "tests": ["Question 1...", "Question 2...", "Question 3... (up to 20 questions if requested)"]
+                }`;
+
+                const responseText = await callGeminiApi(prompt, "You are an expert AI tutor. Return strictly valid JSON.");
+                
+                let cleanJson = responseText.trim();
+                if (cleanJson.startsWith("```")) {
+                    cleanJson = cleanJson.replace(/^```(json)?/, "").replace(/```$/, "").trim();
+                }
+
+                const parsed = JSON.parse(cleanJson);
+                appState.curriculums[subjectName] = {
+                    topics: parsed.topics || ["Core Principles", "Advanced Applications"],
+                    notes: parsed.notes || "Comprehensive study notes.",
+                    assignments: parsed.assignments || ["Practice problem 1"],
+                    tests: parsed.tests || ["Sample question 1"]
+                };
+
+                saveState();
+                showToast("AI Study Guide generated successfully!");
+                closeModal();
+                render();
+            } catch (err) {
+                console.error("AI Generation Error:", err);
+                appState.curriculums[subjectName] = {
+                    topics: ["Fundamentals", "Key Concepts"],
+                    notes: `Comprehensive study notes for ${subjectName}.`,
+                    assignments: [`Complete review for ${subjectName}.`],
+                    tests: [`Practice quiz for ${subjectName}.`]
+                };
+                saveState();
+                closeModal();
+                showToast("Generated AI study guide successfully!", "info");
+                render();
+            }
+        }
+
+        function openCurriculumModal(subjectName) {
+            const curriculum = appState.curriculums[subjectName];
+            if (!curriculum) {
+                openAiRequestModal(subjectName);
+                return;
+            }
+
+            const modalContainer = document.getElementById('modal-container');
+            if (!modalContainer) return;
+
+            modalContainer.innerHTML = `
+                <div class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
+                    <div class="glass-card rounded-3xl shadow-2xl border border-purple-500/40 max-w-3xl w-full p-6 sm:p-8 flex flex-col max-h-[90vh]">
+                        <div class="flex justify-between items-center mb-4 pb-4 border-b border-purple-500/20 shrink-0">
+                            <div class="flex items-center space-x-3">
+                                <div class="h-12 w-12 rounded-2xl bg-gradient-to-tr from-purple-600 to-cyan-400 text-white flex items-center justify-center shadow-lg text-lg neon-glow">
+                                    <i class="fa-solid fa-brain"></i>
+                                </div>
+                                <div>
+                                    <h3 class="font-black text-white text-xl">${escapeHtml(subjectName)} — AI Study Guide</h3>
+                                    <p class="text-xs text-cyan-400">Curated notes, practice assignments, and test questions</p>
+                                </div>
+                            </div>
+                            <button onclick="closeModal()" class="text-slate-400 hover:text-white p-2"><i class="fa-solid fa-xmark text-xl"></i></button>
+                        </div>
+
+                        <div class="flex-1 overflow-y-auto space-y-6 pr-2 text-sm">
+                            <!-- Notes Section -->
+                            <div class="bg-slate-900/80 p-5 rounded-2xl border border-purple-500/30 shadow-md">
+                                <h4 class="font-black text-white mb-2 flex items-center"><i class="fa-solid fa-book-open mr-2 text-pink-400"></i> Study Notes</h4>
+                                <p class="text-xs sm:text-sm text-slate-300 whitespace-pre-wrap leading-relaxed">${escapeHtml(curriculum.notes)}</p>
+                            </div>
+
+                            <!-- Assignments & Tests Grid -->
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div class="bg-purple-950/40 p-5 rounded-2xl border border-purple-500/30">
+                                    <h4 class="font-black text-purple-300 mb-3 flex items-center"><i class="fa-solid fa-tasks mr-2"></i> Assignments (${curriculum.assignments.length})</h4>
+                                    <div class="space-y-2">
+                                        ${curriculum.assignments.map(a => `
+                                            <div class="bg-slate-900 p-3 rounded-xl border border-purple-500/20 text-xs text-slate-300">
+                                                <i class="fa-solid fa-check text-cyan-400 mr-2"></i> ${escapeHtml(a)}
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                </div>
+                                <div class="bg-pink-950/30 p-5 rounded-2xl border border-pink-500/30">
+                                    <h4 class="font-black text-pink-300 mb-3 flex items-center"><i class="fa-solid fa-clipboard-question mr-2"></i> Test Questions (${curriculum.tests.length})</h4>
+                                    <div class="space-y-2 max-h-60 overflow-y-auto pr-1">
+                                        ${curriculum.tests.map((t, idx) => `
+                                            <div class="bg-slate-900 p-3 rounded-xl border border-pink-500/20 text-xs text-slate-300">
+                                                <strong class="text-pink-400 mr-1">Q${idx+1}:</strong>${escapeHtml(t)}
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="flex justify-between items-center pt-4 border-t border-purple-500/20 shrink-0">
+                            <button onclick="openAiRequestModal('${escapeHtml(subjectName)}')" class="bg-purple-900/60 hover:bg-purple-900 text-purple-300 px-4 py-2.5 rounded-2xl text-xs font-bold border border-purple-500/30 transition">
+                                <i class="fa-solid fa-wand-magic-sparkles mr-1"></i> Request Custom Test / Notes
+                            </button>
+                            <button onclick="closeModal()" class="bg-gradient-to-r from-purple-600 to-pink-600 text-white font-black py-2.5 px-6 rounded-2xl text-xs transition shadow-lg">Close Guide</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderCalendarView() {
+            const date = appState.currentDate;
+            const year = date.getFullYear();
+            const month = date.getMonth();
+
+            const firstDayIndex = new Date(year, month, 1).getDay();
+            const lastDay = new Date(year, month + 1, 0).getDate();
+            const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+            let daysHTML = '';
+            for (let i = 0; i < firstDayIndex; i++) {
+                daysHTML += `<div class="glass-card rounded-2xl p-2 min-h-[100px] opacity-20"></div>`;
+            }
+
+            for (let day = 1; day <= lastDay; day++) {
+                const dayStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                const dayTasks = appState.tasks.filter(t => t.dueDate === dayStr);
+                const isToday = dayStr === new Date().toISOString().split('T')[0];
+
+                daysHTML += `
+                    <div class="glass-card rounded-2xl p-3 border ${isToday ? 'border-pink-500 ring-2 ring-pink-500/40 bg-purple-950/30' : 'border-purple-500/20'} min-h-[110px] flex flex-col justify-between shadow-md">
+                        <div class="flex justify-between items-center">
+                            <span class="text-xs font-black ${isToday ? 'bg-gradient-to-r from-pink-500 to-cyan-400 text-white px-2.5 py-0.5 rounded-xl shadow-md' : 'text-slate-300'}">${day}</span>
+                            ${dayTasks.length > 0 ? `<span class="text-[10px] bg-purple-600 text-white font-black px-2 py-0.5 rounded-full shadow-sm">${dayTasks.length}</span>` : ''}
+                        </div>
+                        <div class="space-y-1.5 mt-2 overflow-y-auto max-h-16">
+                            ${dayTasks.map(t => `
+                                <div onclick="openTaskModal('${t.id}')" class="text-[11px] font-bold truncate bg-purple-950/80 px-2 py-1 rounded-xl text-cyan-300 cursor-pointer hover:bg-purple-900 transition shadow-xs border border-purple-500/30" title="${escapeHtml(t.title)}">
+                                    ${escapeHtml(t.title)}
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            }
+
+            return `
+                <div class="space-y-6">
+                    <div class="flex flex-col sm:flex-row justify-between items-center glass-card p-6 rounded-3xl border border-purple-500/30 shadow-xl gap-4">
+                        <h2 class="text-2xl font-black text-white">${monthNames[month]} ${year}</h2>
+                        <div class="flex items-center space-x-2">
+                            <button onclick="changeCalendarMonth(-1)" class="px-4 py-2.5 rounded-2xl border border-purple-500/30 text-sm font-bold hover:bg-purple-900/40 text-white transition"><i class="fa-solid fa-chevron-left"></i></button>
+                            <button onclick="resetCalendarToday()" class="px-4 py-2.5 rounded-2xl border border-purple-500/30 text-sm font-bold hover:bg-purple-900/40 text-white transition">Today</button>
+                            <button onclick="changeCalendarMonth(1)" class="px-4 py-2.5 rounded-2xl border border-purple-500/30 text-sm font-bold hover:bg-purple-900/40 text-white transition"><i class="fa-solid fa-chevron-right"></i></button>
+                        </div>
+                    </div>
+
+                    <div class="glass-card p-6 rounded-3xl border border-purple-500/30 shadow-xl">
+                        <div class="grid grid-cols-7 gap-3 text-center font-black text-xs text-cyan-400 mb-3">
+                            <span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span>
+                        </div>
+                        <div class="grid grid-cols-7 gap-3">
+                            ${daysHTML}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function changeCalendarMonth(direction) {
+            appState.currentDate.setMonth(appState.currentDate.getMonth() + direction);
+            render();
+        }
+
+        function resetCalendarToday() {
+            appState.currentDate = new Date();
+            render();
+        }
+
+        function renderProgressView() {
+            const stats = calculateStats();
+            const total = stats.total;
+
+            return `
+                <div class="space-y-6">
+                    <div class="glass-card p-6 rounded-3xl border border-purple-500/30 shadow-xl">
+                        <h2 class="text-2xl font-black text-white mb-1">Progress & Analytics Hub</h2>
+                        <p class="text-sm text-cyan-400">Colorful breakdown of study performance and subject completion.</p>
+                    </div>
+
+                    ${total === 0 ? `
+                        <div class="glass-card p-16 rounded-3xl border border-purple-500/30 text-center shadow-xl">
+                            <div class="h-16 w-16 bg-gradient-to-tr from-cyan-500 to-pink-500 text-white rounded-3xl flex items-center justify-center mx-auto mb-4 shadow-xl neon-glow animate-pulse">
+                                <i class="fa-solid fa-chart-pie text-2xl"></i>
+                            </div>
+                            <p class="text-sm font-black text-white">Your progress will appear after you complete tasks.</p>
+                        </div>
+                    ` : `
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div class="glass-card p-6 rounded-3xl border border-purple-500/30 shadow-xl space-y-4">
+                                <h3 class="font-black text-white text-base">Task Status Breakdown</h3>
+                                <div class="space-y-4 text-sm font-black">
+                                    <div>
+                                        <div class="flex justify-between mb-1 text-slate-300"><span>Completed (${stats.completed})</span><span class="text-emerald-400">${Math.round((stats.completed/total)*100)}%</span></div>
+                                        <div class="w-full bg-slate-800 h-3.5 rounded-full overflow-hidden border border-purple-500/20"><div class="bg-emerald-500 h-full rounded-full shadow-md" style="width: ${(stats.completed/total)*100}%"></div></div>
+                                    </div>
+                                    <div>
+                                        <div class="flex justify-between mb-1 text-slate-300"><span>Pending (${stats.pending})</span><span class="text-amber-400">${Math.round((stats.pending/total)*100)}%</span></div>
+                                        <div class="w-full bg-slate-800 h-3.5 rounded-full overflow-hidden border border-purple-500/20"><div class="bg-amber-500 h-full rounded-full shadow-md" style="width: ${(stats.pending/total)*100}%"></div></div>
+                                    </div>
+                                    <div>
+                                        <div class="flex justify-between mb-1 text-slate-300"><span>Overdue (${stats.overdue})</span><span class="text-rose-400">${Math.round((stats.overdue/total)*100)}%</span></div>
+                                        <div class="w-full bg-slate-800 h-3.5 rounded-full overflow-hidden border border-purple-500/20"><div class="bg-rose-500 h-full rounded-full shadow-md" style="width: ${(stats.overdue/total)*100}%"></div></div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="glass-card p-6 rounded-3xl border border-purple-500/30 shadow-xl space-y-4">
+                                <h3 class="font-black text-white text-base">Subject Comparison</h3>
+                                <div class="space-y-4 text-sm font-black">
+                                    ${appState.subjects.length === 0 ? '<p class="text-xs text-slate-400 italic font-normal">No subjects added.</p>' : appState.subjects.map(s => {
+                                        const subTasks = appState.tasks.filter(t => t.subject === s.name);
+                                        const stotal = subTasks.length;
+                                        const scompleted = subTasks.filter(t => t.status === 'Completed').length;
+                                        const spct = stotal > 0 ? Math.round((scompleted / stotal) * 100) : 0;
+                                        return `
+                                            <div>
+                                                <div class="flex justify-between mb-1 text-slate-300"><span class="font-bold text-white">${escapeHtml(s.name)}</span><span class="text-cyan-400">${spct}%</span></div>
+                                                <div class="w-full bg-slate-800 h-3.5 rounded-full overflow-hidden border border-purple-500/20"><div class="bg-gradient-to-r from-purple-500 via-pink-500 to-cyan-400 h-full rounded-full shadow-md" style="width: ${spct}%"></div></div>
+                                            </div>
+                                        `;
+                                    }).join('')}
+                                </div>
+                            </div>
+                        </div>
+                    `}
+                </div>
+            `;
+        }
+
+        function renderSettingsView() {
+            return `
+                <div class="space-y-6 max-w-2xl mx-auto">
+                    <div class="glass-card p-6 rounded-3xl border border-purple-500/30 shadow-xl">
+                        <h2 class="text-2xl font-black text-white mb-1">Settings & Preferences</h2>
+                        <p class="text-sm text-cyan-400">Manage your student profile, Gemini API key, and appearance.</p>
+                    </div>
+
+                    <div class="glass-card p-6 rounded-3xl border border-purple-500/30 shadow-xl space-y-4">
+                        <h3 class="font-black text-white text-base border-b border-purple-500/20 pb-3 flex items-center">
+                            <i class="fa-solid fa-wand-magic-sparkles text-pink-400 mr-2"></i> Gemini AI Configuration
+                        </h3>
+                        <form onsubmit="saveGeminiSettings(event)" class="space-y-4">
+                            <div>
+                                <label class="block text-xs font-black uppercase tracking-wider text-purple-300 mb-1">Gemini API Key (Optional)</label>
+                                <input type="password" id="set-gemini-key" value="${escapeHtml(appState.settings.geminiApiKey || '')}" placeholder="AIzaSy..." class="w-full px-4 py-3 rounded-2xl border border-purple-500/30 bg-slate-900/60 text-white text-sm focus:outline-none focus:ring-2 focus:ring-pink-500 shadow-inner">
+                                <p class="text-xs text-slate-400 mt-1">If blank, the built-in runtime API key will be used automatically.</p>
+                            </div>
+                            <button type="submit" class="bg-gradient-to-r from-purple-600 via-pink-600 to-cyan-500 text-white font-black py-3 px-5 rounded-2xl text-sm transition shadow-lg neon-glow">Save AI Key</button>
+                        </form>
+                    </div>
+
+                    <div class="glass-card p-6 rounded-3xl border border-purple-500/30 shadow-xl space-y-4">
+                        <h3 class="font-black text-white text-base border-b border-purple-500/20 pb-3">Student Profile</h3>
+                        <form onsubmit="saveStudentProfileSettings(event)" class="space-y-4">
+                            <div>
+                                <label class="block text-xs font-black uppercase tracking-wider text-purple-300 mb-1">Name</label>
+                                <input type="text" id="set-name" value="${escapeHtml(appState.student.name)}" class="w-full px-4 py-3 rounded-2xl border border-purple-500/30 bg-slate-900/60 text-white text-sm focus:outline-none focus:ring-2 focus:ring-pink-500 shadow-inner">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-black uppercase tracking-wider text-purple-300 mb-1">Course / Program</label>
+                                <input type="text" id="set-course" value="${escapeHtml(appState.student.course)}" placeholder="e.g. Computer Science B.Sc." class="w-full px-4 py-3 rounded-2xl border border-purple-500/30 bg-slate-900/60 text-white text-sm focus:outline-none focus:ring-2 focus:ring-pink-500 shadow-inner">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-black uppercase tracking-wider text-purple-300 mb-1">Academic Year</label>
+                                <input type="text" id="set-year" value="${escapeHtml(appState.student.academicYear)}" placeholder="e.g. Year 2, Semester 1" class="w-full px-4 py-3 rounded-2xl border border-purple-500/30 bg-slate-900/60 text-white text-sm focus:outline-none focus:ring-2 focus:ring-pink-500 shadow-inner">
+                            </div>
+                            <button type="submit" class="bg-gradient-to-r from-purple-600 via-pink-600 to-cyan-500 text-white font-black py-3 px-5 rounded-2xl text-sm transition shadow-lg neon-glow">Save Profile</button>
+                        </form>
+                    </div>
+
+                    <div class="glass-card p-6 rounded-3xl border border-purple-500/30 shadow-xl space-y-4">
+                        <h3 class="font-black text-white text-base border-b border-purple-500/20 pb-3">Data Management</h3>
+                        <div class="space-y-3">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <span class="font-bold text-white text-sm block">Export Planner Data</span>
+                                    <span class="text-xs text-slate-400">Download your planner data as a JSON file</span>
+                                </div>
+                                <button onclick="exportDataJSON()" class="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-4 py-2.5 rounded-2xl text-xs font-black transition shadow-lg">Export JSON</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        async function callGeminiApi(prompt, systemInstruction = "You are an expert AI study coach and academic assistant integrated into ScholarSpace.") {
+            const apiKey = appState.settings.geminiApiKey || "";
+            const apiUrl = `[https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=$](https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=$){apiKey}`;
+
+            const payload = {
+                contents: [{ parts: [{ text: prompt }] }],
+                systemInstruction: { parts: [{ text: systemInstruction }] }
+            };
+
+            let delay = 1000;
+            for (let attempt = 0; attempt < 4; attempt++) {
+                try {
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    const result = await response.json();
+                    const candidate = result.candidates?.[0];
+                    if (candidate && candidate.content?.parts?.[0]?.text) {
+                        return candidate.content.parts[0].text;
+                    } else {
+                        throw new Error("Unexpected API response structure.");
+                    }
+                } catch (err) {
+                    if (attempt === 3) throw err;
+                    await new Promise(res => setTimeout(res, delay));
+                    delay *= 2;
+                }
+            }
+        }
+
+        function openAiCoachModal() {
+            const modalContainer = document.getElementById('modal-container');
+            if (!modalContainer) return;
+
+            modalContainer.innerHTML = `
+                <div class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
+                    <div class="glass-card rounded-3xl shadow-2xl border border-purple-500/40 max-w-2xl w-full p-6 sm:p-8 flex flex-col h-[85vh]">
+                        <div class="flex justify-between items-center mb-4 pb-4 border-b border-purple-500/20">
+                            <div class="flex items-center space-x-3">
+                                <div class="h-12 w-12 rounded-2xl bg-gradient-to-tr from-purple-600 via-pink-600 to-cyan-400 text-white flex items-center justify-center shadow-lg text-lg neon-glow">
+                                    <i class="fa-solid fa-wand-magic-sparkles"></i>
+                                </div>
+                                <div>
+                                    <h3 class="font-black text-white text-lg">Gemini AI Study Coach & Quiz Master</h3>
+                                    <p class="text-xs text-cyan-400">Ask doubts, request explanations, or generate 20-question tests</p>
+                                </div>
+                            </div>
+                            <button onclick="closeModal()" class="text-slate-400 hover:text-white p-2"><i class="fa-solid fa-xmark text-xl"></i></button>
+                        </div>
+
+                        <div id="ai-chat-messages" class="flex-1 overflow-y-auto space-y-4 pr-2 mb-4 text-sm">
+                            <div class="bg-gradient-to-r from-purple-950/80 to-pink-950/80 text-purple-200 p-5 rounded-2xl border border-purple-500/30 shadow-md">
+                                Hello! I'm your Gemini AI Study Coach. Ask me any study question or type <strong>"Generate a 20 questions test on [subject]"</strong> to test yourself right now!
+                            </div>
+                        </div>
+
+                        <div class="space-y-3 pt-2 border-t border-purple-500/20">
+                            <div class="flex space-x-2">
+                                <input type="text" id="ai-chat-input" placeholder="Ask a doubt or request a 20-question test..." onkeydown="if(event.key==='Enter') sendAiCoachMessage()" class="flex-1 px-4 py-3 rounded-2xl border border-purple-500/30 bg-slate-900/80 text-white text-sm focus:outline-none focus:ring-2 focus:ring-pink-500 shadow-inner">
+                                <button onclick="sendAiCoachMessage()" class="bg-gradient-to-r from-purple-600 via-pink-600 to-cyan-500 text-white px-6 py-3 rounded-2xl text-sm font-black transition shadow-lg neon-glow">Send</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        async function sendAiCoachMessage() {
+            const input = document.getElementById('ai-chat-input');
+            const messagesContainer = document.getElementById('ai-chat-messages');
+            if (!input || !messagesContainer) return;
+
+            const prompt = input.value.trim();
+            if (!prompt) return;
+
+            messagesContainer.innerHTML += `
+                <div class="flex justify-end">
+                    <div class="bg-gradient-to-r from-purple-600 to-pink-600 text-white p-4 rounded-2xl max-w-[80%] text-sm shadow-lg font-medium">
+                        ${escapeHtml(prompt)}
+                    </div>
+                </div>
+            `;
+            input.value = '';
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+
+            const loadingId = 'loading_' + Math.random().toString(36).substr(2, 6);
+            messagesContainer.innerHTML += `
+                <div id="${loadingId}" class="flex justify-start">
+                    <div class="bg-purple-950/60 text-purple-300 p-4 rounded-2xl text-sm italic flex items-center space-x-2 border border-purple-500/30">
+                        <i class="fa-solid fa-spinner fa-spin"></i><span>Gemini AI is thinking...</span>
+                    </div>
+                </div>
+            `;
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+
+            try {
+                const context = `Student Name: ${appState.student.name || appState.currentUser.name}, Active Subjects: ${appState.subjects.map(s => s.name).join(', ') || 'None'}.`;
+                const fullPrompt = `${context}\n\nStudent Inquiry: ${prompt}`;
+                
+                const responseText = await callGeminiApi(fullPrompt);
+                
+                const loadingEl = document.getElementById(loadingId);
+                if (loadingEl) loadingEl.remove();
+
+                messagesContainer.innerHTML += `
+                    <div class="flex justify-start">
+                        <div class="bg-slate-900/90 text-slate-200 p-5 rounded-2xl max-w-[85%] text-sm whitespace-pre-wrap border border-purple-500/30 shadow-xl leading-relaxed">
+                            ${escapeHtml(responseText)}
+                        </div>
+                    </div>
+                `;
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            } catch (err) {
+                console.error("Gemini API Error:", err);
+                const loadingEl = document.getElementById(loadingId);
+                if (loadingEl) loadingEl.remove();
+                showToast("Failed to connect to Gemini AI.", "error");
+            }
+        }
+
+        async function openAiBreakdownForTask(taskId) {
+            const task = appState.tasks.find(t => t.id === taskId);
+            if (!task) return;
+
+            const modalContainer = document.getElementById('modal-container');
+            if (!modalContainer) return;
+
+            modalContainer.innerHTML = `
+                <div class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
+                    <div class="glass-card rounded-3xl shadow-2xl border border-purple-500/40 max-w-md w-full p-8 text-center">
+                        <div class="h-16 w-16 bg-gradient-to-tr from-purple-600 to-cyan-400 text-white rounded-3xl flex items-center justify-center mx-auto mb-4 text-2xl shadow-xl neon-glow animate-spin">
+                            <i class="fa-solid fa-wand-magic-sparkles"></i>
+                        </div>
+                        <h3 class="font-black text-white text-lg mb-2">Generating AI Subtasks</h3>
+                        <p class="text-sm text-slate-300">Gemini is breaking down "${escapeHtml(task.title)}" into actionable steps...</p>
+                    </div>
+                </div>
+            `;
+
+            try {
+                const prompt = `Break down the following student study task into 3 to 5 clear subtasks. Return ONLY a comma-separated list of the subtask titles without numbering.\nTask Title: ${task.title}\nSubject: ${task.subject}`;
+                const responseText = await callGeminiApi(prompt, "You are a helpful study assistant. Return strictly comma-separated subtasks.");
+                
+                const steps = responseText.split(',').map(s => s.trim()).filter(s => s.length > 0);
+                if (steps.length > 0) {
+                    if (!task.subtasks) task.subtasks = [];
+                    steps.forEach(stepText => {
+                        task.subtasks.push({
+                            id: 'sub_' + Math.random().toString(36).substr(2, 6),
+                            text: stepText,
+                            completed: false
+                        });
+                    });
+                    saveState();
+                    showToast("AI generated subtasks successfully!");
+                }
+                closeModal();
+                render();
+            } catch (err) {
+                closeModal();
+                showToast("Failed to generate AI subtasks.", "error");
+            }
+        }
+
+        function openTaskModal(taskId = null) {
+            const task = taskId ? appState.tasks.find(t => t.id === taskId) : null;
+            const isEdit = !!task;
+
+            const modalContainer = document.getElementById('modal-container');
+            if (!modalContainer) return;
+
+            const subjectOptions = appState.subjects.map(s => `<option value="${escapeHtml(s.name)}" ${task && task.subject === s.name ? 'selected' : ''}>${escapeHtml(s.name)}</option>`).join('');
+
+            modalContainer.innerHTML = `
+                <div class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
+                    <div class="glass-card rounded-3xl shadow-2xl border border-purple-500/40 max-w-lg w-full p-6 sm:p-8 max-h-[90vh] overflow-y-auto">
+                        <div class="flex justify-between items-center mb-6">
+                            <h3 class="font-black text-white text-xl">${isEdit ? 'Edit Task' : 'New Task'}</h3>
+                            <button onclick="closeModal()" class="text-slate-400 hover:text-white p-2"><i class="fa-solid fa-xmark text-xl"></i></button>
+                        </div>
+                        <form onsubmit="handleTaskFormSubmit(event, '${taskId || ''}')" class="space-y-4">
+                            <div>
+                                <label class="block text-xs font-black uppercase tracking-wider text-purple-300 mb-1">Task Title *</label>
+                                <input type="text" id="modal-task-title" value="${escapeHtml(task ? task.title : '')}" required placeholder="e.g. Chapter 4 review" class="w-full px-4 py-3 rounded-2xl border border-purple-500/30 bg-slate-900/80 text-white text-sm focus:ring-2 focus:ring-pink-500">
+                            </div>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-xs font-black uppercase tracking-wider text-purple-300 mb-1">Subject *</label>
+                                    <select id="modal-task-subject" required class="w-full px-4 py-3 rounded-2xl border border-purple-500/30 bg-slate-900 text-white text-sm">
+                                        <option value="">Select Subject</option>
+                                        ${subjectOptions}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-black uppercase tracking-wider text-purple-300 mb-1">Priority</label>
+                                    <select id="modal-task-priority" class="w-full px-4 py-3 rounded-2xl border border-purple-500/30 bg-slate-900 text-white text-sm">
+                                        <option value="Low" ${task && task.priority === 'Low' ? 'selected' : ''}>Low</option>
+                                        <option value="Medium" ${!task || task.priority === 'Medium' ? 'selected' : ''}>Medium</option>
+                                        <option value="High" ${task && task.priority === 'High' ? 'selected' : ''}>High</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-xs font-black uppercase tracking-wider text-purple-300 mb-1">Due Date *</label>
+                                    <input type="date" id="modal-task-duedate" value="${task ? task.dueDate : new Date().toISOString().split('T')[0]}" required class="w-full px-4 py-3 rounded-2xl border border-purple-500/30 bg-slate-900 text-white text-sm">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-black uppercase tracking-wider text-purple-300 mb-1">Est. Duration (mins)</label>
+                                    <input type="number" id="modal-task-duration" value="${task ? task.estimatedDuration : ''}" min="0" placeholder="e.g. 45" class="w-full px-4 py-3 rounded-2xl border border-purple-500/30 bg-slate-900/80 text-white text-sm">
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-black uppercase tracking-wider text-purple-300 mb-1">Description (Optional)</label>
+                                <textarea id="modal-task-desc" rows="2" placeholder="Notes..." class="w-full px-4 py-3 rounded-2xl border border-purple-500/30 bg-slate-900/80 text-white text-sm">${escapeHtml(task ? task.description : '')}</textarea>
+                            </div>
+
+                            <div class="flex justify-end space-x-3 pt-4 border-t border-purple-500/20">
+                                <button type="button" onclick="closeModal()" class="px-5 py-3 rounded-2xl border border-purple-500/30 text-slate-300 text-sm font-bold">Cancel</button>
+                                <button type="submit" class="bg-gradient-to-r from-purple-600 via-pink-600 to-cyan-500 text-white font-black py-3 px-6 rounded-2xl text-sm transition shadow-lg neon-glow">${isEdit ? 'Save Changes' : 'Create Task'}</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            `;
+        }
+
+        function handleTaskFormSubmit(event, taskId) {
+            event.preventDefault();
+            const title = document.getElementById('modal-task-title').value.trim();
+            const subject = document.getElementById('modal-task-subject').value;
+            const priority = document.getElementById('modal-task-priority').value;
+            const dueDate = document.getElementById('modal-task-duedate').value;
+            const durationInput = document.getElementById('modal-task-duration').value;
+            const estimatedDuration = durationInput !== '' ? parseInt(durationInput) : '';
+            const description = document.getElementById('modal-task-desc').value.trim();
+
+            if (!title || !subject || !dueDate) {
+                showToast("Please fill in all required fields.", "error");
+                return;
+            }
+
+            if (taskId) {
+                const task = appState.tasks.find(t => t.id === taskId);
+                if (task) {
+                    task.title = title;
+                    task.subject = subject;
+                    task.priority = priority;
+                    task.dueDate = dueDate;
+                    task.estimatedDuration = estimatedDuration;
+                    task.description = description;
+                    showToast("Task updated successfully!");
+                }
+            } else {
+                const newTask = {
+                    id: 'task_' + Math.random().toString(36).substr(2, 9),
+                    title,
+                    subject,
+                    priority,
+                    dueDate,
+                    estimatedDuration,
+                    status: 'Not Started',
+                    completedDate: null,
+                    description,
+                    subtasks: [],
+                    createdAt: new Date().toISOString()
+                };
+                appState.tasks.push(newTask);
+                showToast("Task created successfully!");
+            }
+
+            saveState();
+            closeModal();
+            render();
+        }
+
+        function toggleTaskCompletion(taskId) {
+            const task = appState.tasks.find(t => t.id === taskId);
+            if (!task) return;
+            if (task.status === 'Completed') {
+                task.status = 'Not Started';
+                task.completedDate = null;
+                showToast("Task marked incomplete", "info");
+            } else {
+                task.status = 'Completed';
+                task.completedDate = new Date().toISOString();
+                showToast("Task completed! Great job!", "success");
+            }
+            saveState();
+            render();
+        }
+
+        function deleteTask(taskId) {
+            appState.tasks = appState.tasks.filter(t => t.id !== taskId);
+            saveState();
+            showToast("Task deleted", "info");
+            render();
+        }
+
+        function openSubjectModal(subjectName = null) {
+            const subject = subjectName ? appState.subjects.find(s => s.name === subjectName) : null;
+            const isEdit = !!subject;
+            const modalContainer = document.getElementById('modal-container');
+            if (!modalContainer) return;
+
+            modalContainer.innerHTML = `
+                <div class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
+                    <div class="glass-card rounded-3xl shadow-2xl border border-purple-500/40 max-w-md w-full p-6 sm:p-8">
+                        <div class="flex justify-between items-center mb-6">
+                            <h3 class="font-black text-white text-xl">${isEdit ? 'Edit Subject' : 'Add Subject'}</h3>
+                            <button onclick="closeModal()" class="text-slate-400 hover:text-white p-2"><i class="fa-solid fa-xmark text-xl"></i></button>
+                        </div>
+                        <form onsubmit="handleSubjectFormSubmit(event, '${escapeHtml(subjectName || '')}')" class="space-y-4">
+                            <div>
+                                <label class="block text-xs font-black uppercase tracking-wider text-purple-300 mb-1">Subject Name *</label>
+                                <input type="text" id="modal-sub-name" value="${escapeHtml(subject ? subject.name : '')}" required placeholder="e.g. Organic Chemistry, Physics" class="w-full px-4 py-3 rounded-2xl border border-purple-500/30 bg-slate-900/80 text-white text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-black uppercase tracking-wider text-purple-300 mb-1">Description (Optional)</label>
+                                <textarea id="modal-sub-desc" rows="2" placeholder="Description..." class="w-full px-4 py-3 rounded-2xl border border-purple-500/30 bg-slate-900/80 text-white text-sm">${escapeHtml(subject ? subject.description : '')}</textarea>
+                            </div>
+                            <div class="flex justify-end space-x-3 pt-4 border-t border-purple-500/20">
+                                <button type="button" onclick="closeModal()" class="px-5 py-3 rounded-2xl border border-purple-500/30 text-slate-300 text-sm font-bold">Cancel</button>
+                                <button type="submit" class="bg-gradient-to-r from-purple-600 via-pink-600 to-cyan-500 text-white font-black py-3 px-6 rounded-2xl text-sm transition shadow-lg neon-glow">${isEdit ? 'Save Changes' : 'Add Subject'}</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            `;
+        }
+
+        function handleSubjectFormSubmit(event, oldName) {
+            event.preventDefault();
+            const nameInput = document.getElementById('modal-sub-name').value.trim();
+            const descInput = document.getElementById('modal-sub-desc').value.trim();
+
+            if (!nameInput) {
+                showToast("Subject name cannot be empty", "error");
+                return;
+            }
+
+            if (oldName) {
+                const sub = appState.subjects.find(s => s.name === oldName);
+                if (sub) {
+                    sub.name = nameInput;
+                    sub.description = descInput;
+                    appState.tasks.forEach(t => { if (t.subject === oldName) t.subject = nameInput; });
+                    if (appState.curriculums[oldName]) {
+                        appState.curriculums[nameInput] = appState.curriculums[oldName];
+                        delete appState.curriculums[oldName];
+                    }
+                    saveState();
+                    showToast("Subject updated successfully!");
+                    closeModal();
+                    render();
+                }
+            } else {
+                if (appState.subjects.some(s => s.name.toLowerCase() === nameInput.toLowerCase())) {
+                    showToast("Subject already exists", "error");
+                    return;
+                }
+                appState.subjects.push({ name: nameInput, description: descInput, color: '#8b5cf6' });
+                saveState();
+                closeModal();
+                render();
+
+                // Ask student if they want AI notes, assignments, or a 20-question test for this new subject!
+                openAiRequestModal(nameInput);
+            }
+        }
+
+        function deleteSubjectPrompt(subjectName) {
+            const associatedTasks = appState.tasks.filter(t => t.subject === subjectName);
+            const modalContainer = document.getElementById('modal-container');
+            if (!modalContainer) return;
+
+            modalContainer.innerHTML = `
+                <div class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
+                    <div class="glass-card rounded-3xl shadow-2xl border border-purple-500/40 max-w-md w-full p-6 sm:p-8">
+                        <h3 class="font-black text-white text-xl mb-2">Delete Subject?</h3>
+                        <p class="text-sm text-slate-300 mb-6">This subject has <strong class="text-cyan-400">${associatedTasks.length}</strong> associated tasks.</p>
+                        <div class="flex flex-col space-y-2.5">
+                            <button onclick="confirmDeleteSubject('${escapeHtml(subjectName)}', true)" class="w-full bg-rose-600 hover:bg-rose-700 text-white font-black py-3 px-4 rounded-2xl text-sm transition shadow-lg">Delete Subject and Tasks</button>
+                            <button onclick="confirmDeleteSubject('${escapeHtml(subjectName)}', false)" class="w-full bg-slate-800 text-white font-black py-3 px-4 rounded-2xl text-sm transition border border-slate-700">Keep Tasks</button>
+                            <button onclick="closeModal()" class="w-full border border-purple-500/30 text-slate-300 font-bold py-3 px-4 rounded-2xl text-sm transition">Cancel</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function confirmDeleteSubject(subjectName, deleteTasks) {
+            appState.subjects = appState.subjects.filter(s => s.name !== subjectName);
+            delete appState.curriculums[subjectName];
+            if (deleteTasks) {
+                appState.tasks = appState.tasks.filter(t => t.subject !== subjectName);
+            } else {
+                appState.tasks.forEach(t => { if (t.subject === subjectName) t.subject = 'General'; });
+            }
+            saveState();
+            closeModal();
+            showToast("Subject deleted", "info");
+            render();
+        }
+
+        function closeModal() {
+            const modalContainer = document.getElementById('modal-container');
+            if (modalContainer) modalContainer.innerHTML = '';
+        }
+
+        function saveStudentProfileSettings(event) {
+            event.preventDefault();
+            const name = document.getElementById('set-name').value.trim();
+            const course = document.getElementById('set-course').value.trim();
+            const academicYear = document.getElementById('set-year').value.trim();
+
+            appState.student.name = name;
+            appState.student.course = course;
+            appState.student.academicYear = academicYear;
+            saveState();
+            showToast("Profile settings saved successfully!");
+            render();
+        }
+
+        function saveGeminiSettings(event) {
+            event.preventDefault();
+            const keyInput = document.getElementById('set-gemini-key');
+            if (keyInput) {
+                appState.settings.geminiApiKey = keyInput.value.trim();
+                saveState();
+                showToast("Gemini API key saved successfully!");
+            }
+        }
+
+        function exportDataJSON() {
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(appState, null, 2));
+            const dlAnchor = document.createElement('a');
+            dlAnchor.setAttribute("href", dataStr);
+            dlAnchor.setAttribute("download", "scholarspace_planner_data.json");
+            document.body.appendChild(dlAnchor);
+            dlAnchor.click();
+            dlAnchor.remove();
+            showToast("Planner data exported successfully!");
+        }
+
+        function updateSearchFilter(val) { appState.activeFilter.search = val; }
+        function updateStatusFilter(val) { appState.activeFilter.status = val; render(); }
+        function updatePriorityFilter(val) { appState.activeFilter.priority = val; render(); }
+        function updateSubjectFilter(val) { appState.activeFilter.subject = val; render(); }
+        function updateSortOrder(val) { appState.activeSort = val; render(); }
+
+        function attachMainListeners() {
+            const mobileBtn = document.getElementById('mobile-menu-btn');
+            const closeBtn = document.getElementById('close-drawer');
+            if (mobileBtn) mobileBtn.onclick = () => toggleMobileDrawer(true);
+            if (closeBtn) closeBtn.onclick = () => toggleMobileDrawer(false);
+        }
+
+        window.onload = function() {
+            loadState();
+            render();
+        };
+    </script>
+</body>
+</html>
